@@ -2,9 +2,16 @@ const canvas = document.getElementById('gameCanvas');
 const ctx = canvas.getContext('2d');
 const scoreElement = document.getElementById('score');
 
+// Автоматически меняем текст счетчика под новую тематику
+const scoreBoard = document.getElementById('score-board');
+if (scoreBoard) {
+    scoreBoard.innerHTML = 'Самокрутки: <span id="score">0</span>';
+}
+const updatedScoreElement = document.getElementById('score');
+
 let score = 0;
 
-// Подстраиваем размер игрового поля под экран телефона или компьютера
+// Настройка размеров экрана
 function resizeCanvas() {
     canvas.width = window.innerWidth;
     canvas.height = window.innerHeight;
@@ -12,100 +19,114 @@ function resizeCanvas() {
 window.addEventListener('resize', resizeCanvas);
 resizeCanvas();
 
-// Настройки игры
-const tileSize = 40; // Размер квадрата снега
-const frog = {
-    x: canvas.width / 2,
-    y: canvas.height / 2,
+const tileSize = 40; // Размер квадрата кустов
+
+// Персонаж: Снуп Догг
+const snoop = {
+    x: window.innerWidth / 2,
+    y: window.innerHeight / 2,
     radius: 15,
-    targetX: canvas.width / 2,
-    targetY: canvas.height / 2,
-    speed: 5
+    targetX: window.innerWidth / 2,
+    targetY: window.innerHeight / 2,
+    speed: 5 // Скорость перемещения Снупа
 };
 
-// Генерация карты снега
-let snowTiles = [];
-const cols = Math.ceil(canvas.width / tileSize);
-const rows = Math.ceil(canvas.height / tileSize);
+// Генерация сетки из кустов
+let bushes = [];
+const cols = Math.ceil(window.innerWidth / tileSize) + 1;
+const rows = Math.ceil(window.innerHeight / tileSize) + 1;
 
 for (let c = 0; c < cols; c++) {
     for (let r = 0; r < rows; r++) {
-        snowTiles.push({
+        bushes.push({
             x: c * tileSize,
             y: r * tileSize,
-            isDug: false,
-            hasGold: Math.random() < 0.15 // 15% шанс, что под снегом есть золото
+            isCut: false, // Срезан ли куст
+            hasCigarette: Math.random() < 0.20 // 20% шанс найти самокрутку в кустах
         });
     }
 }
 
-// Управление тапами/кликами
-function moveTo(clientX, clientY) {
-    frog.targetX = clientX;
-    frog.targetY = clientY;
+// Функция считывания координат для движения
+function handleInput(clientX, clientY) {
+    snoop.targetX = clientX;
+    snoop.targetY = clientY;
 }
 
-window.addEventListener('click', (e) => moveTo(e.clientX, e.clientY));
-window.addEventListener('touchstart', (e) => {
-    if (e.touches.length > 0) {
-        moveTo(e.touches[0].clientX, e.touches[0].clientY);
-    }
+// Управление для ПК
+window.addEventListener('click', (e) => {
+    handleInput(e.clientX, e.clientY);
 });
 
-// Главный игровой цикл (обновление и рисование)
+// Управление для iPhone (Тапы)
+window.addEventListener('touchstart', (e) => {
+    if (e.touches && e.touches.length > 0) {
+        handleInput(e.touches[0].clientX, e.touches[0].clientY);
+    }
+}, { passive: true });
+
+// Игровой цикл
 function gameLoop() {
-    // 1. Очистка экрана
-    ctx.fillStyle = '#1a1a1a';
+    // Задний фон (земля после срезания кустов)
+    ctx.fillStyle = '#1e251c'; 
     ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-    // 2. Рисуем снег
-    snowTiles.forEach(tile => {
-        if (!tile.isDug) {
-            ctx.fillStyle = '#e0f4f7'; // Цвет снега
-            ctx.fillRect(tile.x + 1, tile.y + 1, tileSize - 2, tileSize - 2);
+    // 1. Отрисовка кустов
+    bushes.forEach(bush => {
+        if (!bush.isCut) {
+            ctx.fillStyle = '#2E7D32'; // Зеленый цвет кустов
+            ctx.fillRect(bush.x + 1, bush.y + 1, tileSize - 2, tileSize - 2);
+            
+            // Легкий внутренний узор для текстуры куста
+            ctx.fillStyle = '#1B5E20';
+            ctx.fillRect(bush.x + 10, bush.y + 10, tileSize - 20, tileSize - 20);
         }
     });
 
-    // 3. Движение лягушки к точке тапа
-    const dx = frog.targetX - frog.x;
-    const dy = frog.targetY - frog.y;
+    // 2. Логика плавного движения Снуп Догга
+    const dx = snoop.targetX - snoop.x;
+    const dy = snoop.targetY - snoop.y;
     const distance = Math.sqrt(dx * dx + dy * dy);
 
-    if (distance > frog.speed) {
-        frog.x += (dx / distance) * frog.speed;
-        frog.y += (dy / distance) * frog.speed;
+    if (distance > snoop.speed) {
+        snoop.x += (dx / distance) * snoop.speed;
+        snoop.y += (dy / distance) * snoop.speed;
     } else {
-        frog.x = frog.targetX;
-        frog.y = frog.targetY;
+        snoop.x = snoop.targetX;
+        snoop.y = snoop.targetY;
     }
 
-    // 4. Проверка столкновения лягушки со снегом (раскопка)
-    snowTiles.forEach(tile => {
-        if (!tile.isDug) {
-            // Проверяем, заходит ли круг лягушки на квадрат снега
-            const closestX = Math.max(tile.x, Math.min(frog.x, tile.x + tileSize));
-            const closestY = Math.max(tile.y, Math.min(frog.y, tile.y + tileSize));
-            const distChunks = Math.sqrt((frog.x - closestX) ** 2 + (frog.y - closestY) ** 2);
+    // 3. Проверка столкновения с кустами (срезание кустов и сбор самокруток)
+    bushes.forEach(bush => {
+        if (!bush.isCut) {
+            const closestX = Math.max(bush.x, Math.min(snoop.x, bush.x + tileSize));
+            const closestY = Math.max(bush.y, Math.min(snoop.y, bush.y + tileSize));
+            const dist = Math.sqrt((snoop.x - closestX) ** 2 + (snoop.y - closestY) ** 2);
 
-            if (distChunks < frog.radius) {
-                tile.isDug = true; // Снег убран
-                if (tile.hasGold) {
+            if (dist < snoop.radius) {
+                bush.isCut = true; // Куст срезан
+                if (bush.hasCigarette) {
                     score += 1;
-                    scoreElement.innerText = score; // Обновляем счетчик
+                    if (updatedScoreElement) updatedScoreElement.innerText = score;
                 }
             }
         }
     });
 
-    // 5. Рисуем лягушку (зеленый кружок)
+    // 4. Отрисовка персонажа (Снуп Догг)
     ctx.beginPath();
-    ctx.arc(frog.x, frog.y, frog.radius, 0, Math.PI * 2);
-    ctx.fillStyle = '#4CAF50'; // Зеленый цвет лягушки
+    ctx.arc(snoop.x, snoop.y, snoop.radius, 0, Math.PI * 2);
+    ctx.fillStyle = '#7B1FA2'; // Фиолетовый цвет худи Снупа
     ctx.fill();
+    
+    // Золотая обводка/цепь персонажа
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = '#FFD700'; 
+    ctx.stroke();
     ctx.closePath();
 
     requestAnimationFrame(gameLoop);
 }
 
-// Запуск игры
+// Старт игры
 gameLoop();
