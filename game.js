@@ -16,7 +16,7 @@ function updateUI() {
 }
 updateUI();
 
-// Полное динамическое заполнение экрана iPhone от края до края
+// Фиксируем холст и адаптивно растягиваем под экран любого iPhone
 function resizeCanvas() {
     canvas.width = window.innerWidth;
     canvas.height = window.innerHeight;
@@ -27,10 +27,7 @@ function resizeCanvas() {
     canvas.style.top = '0';
     canvas.style.left = '0';
 }
-window.addEventListener('resize', () => {
-    resizeCanvas();
-    // Пересобирать сетку при изменении экрана не нужно, чтобы не ломать игру
-});
+window.addEventListener('resize', resizeCanvas);
 resizeCanvas();
 
 // Загрузка картинок
@@ -42,17 +39,23 @@ const imgHome = new Image();   imgHome.src = 'home.png';
 const imgWater = new Image();  imgWater.src = 'water.png';
 const imgSmile = new Image();  imgSmile.src = 'smile.png';
 
-const tileSize = 36; // Оптимальный размер куста для плотной сетки
+// Рассчитываем размер сетки под фиксированное количество кустов (22 на 9)
+const mapTilesX = 22; 
+const mapTilesY = 9;
 
-// Вытянутый дом строго по центру динамического экрана
+// Динамический размер клетки, чтобы 22х9 кустов занимали ровно весь экран смартфона
+const tileW = window.innerWidth / mapTilesX;
+const tileH = window.innerHeight / mapTilesY;
+
+// Вытянутый дом строго в центре сетки 22х9
 const homePos = {
-    x: Math.floor(window.innerWidth / 2) - (tileSize * 2.5),
-    y: Math.floor(window.innerHeight / 2) - tileSize,
-    w: tileSize * 5, // Сделали дом еще шире, чтобы убрать сплющивание
-    h: tileSize * 2  
+    x: Math.floor(mapTilesX / 2) * tileW - (tileW * 1.5),
+    y: Math.floor(mapTilesY / 2) * tileH - tileH,
+    w: tileW * 4, 
+    h: tileH * 2  
 };
 
-// Снуп Догг стартует из центра дома
+// Снуп Догг
 const snoop = {
     x: window.innerWidth / 2,
     y: window.innerHeight / 2,
@@ -62,22 +65,29 @@ const snoop = {
     speed: 4
 };
 
-// Заполняем абсолютно весь прямоугольник экрана кустами
+// Генерируем фиксированную сетку 22 на 9 кустов
 let bushes = [];
-for (let x = 0; x < window.innerWidth + tileSize; x += tileSize) {
-    for (let y = 0; y < window.innerHeight + tileSize; y += tileSize) {
-        // Пропускаем зону дома
-        if (x >= homePos.x - 10 && x < homePos.x + homePos.w && y >= homePos.y - 10 && y < homePos.y + homePos.h) {
+for (let c = 0; c < mapTilesX; c++) {
+    for (let r = 0; r < mapTilesY; r++) {
+        let posX = c * tileW;
+        let posY = r * tileH;
+
+        // Пропускаем зону дома в центре
+        if (posX >= homePos.x - 5 && posX < homePos.x + homePos.w && posY >= homePos.y - 5 && posY < homePos.y + homePos.h) {
             continue;
         }
+
         bushes.push({
-            x: x,
-            y: y,
+            x: posX,
+            y: posY,
             isCut: false,
             hasCigarette: Math.random() < 0.08 // Шанс 8%
         });
     }
 }
+
+// Сортировка кустов сверху вниз (по Y) для красивого 3D-перекрытия верхними рядами нижних
+bushes.sort((a, b) => a.y - b.y);
 
 let droppedItems = [];
 
@@ -93,8 +103,8 @@ let cop = {
 };
 
 function getMousePos(e) {
-    const clientX = e.touches ? e.touches[0].clientX : e.clientX;
-    const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+    const clientX = e.touches ? e.touches.clientX : e.clientX;
+    const clientY = e.touches ? e.touches.clientY : e.clientY;
     return { x: clientX, y: clientY };
 }
 
@@ -122,26 +132,30 @@ function gameLoop() {
         return;
     }
 
-    // Земля подстраивается под размеры экрана
+    // Земля (фон под кустами)
     ctx.fillStyle = '#1e231c';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-    // 1. Отрисовка дома (вытянут по ширине)
+    // 1. Отрисовка дома
     if (imgHome.complete && imgHome.width > 0) {
-        ctx.drawImage(imgHome, homePos.x, homePos.y - tileSize, homePos.w, homePos.h + tileSize);
+        ctx.drawImage(imgHome, homePos.x, homePos.y - tileH, homePos.w, homePos.h + tileH);
     } else {
         ctx.fillStyle = '#8B4513';
         ctx.fillRect(homePos.x, homePos.y, homePos.w, homePos.h);
     }
 
-    // 2. Отрисовка кустов
+    // 2. Отрисовка кустов С УВЕЛИЧЕННЫМ РАЗМЕРОМ (чтобы перекрывали зазоры)
     bushes.forEach(bush => {
         if (!bush.isCut) {
             if (imgBush.complete && imgBush.width > 0) {
-                ctx.drawImage(imgBush, bush.x - 2, bush.y - 10, tileSize + 4, tileSize + 12);
+                // Делаем кусты на 40% больше клетки по ширине и высоте для плотного наложения друг на друга
+                const bWidth = tileW * 1.4;
+                const bHeight = tileH * 1.4;
+                // Смещаем картинку влево и вверх, чтобы визуально компенсировать нахлест
+                ctx.drawImage(imgBush, bush.x - (bWidth - tileW) / 2, bush.y - (bHeight - tileH), bWidth, bHeight);
             } else {
                 ctx.fillStyle = '#2E7D32';
-                ctx.fillRect(bush.x + 1, bush.y + 1, tileSize - 2, tileSize - 2);
+                ctx.fillRect(bush.x + 1, bush.y + 1, tileW - 2, tileH - 2);
             }
         }
     });
@@ -150,7 +164,7 @@ function gameLoop() {
     for (let i = droppedItems.length - 1; i >= 0; i--) {
         let item = droppedItems[i];
         if (imgItem.complete && imgItem.width > 0) {
-            ctx.drawImage(imgItem, item.x - 16, item.y - 16, 32, 32); // Крупная четкая иконка
+            ctx.drawImage(imgItem, item.x - 16, item.y - 16, 32, 32); 
         } else {
             ctx.fillStyle = '#FFD700';
             ctx.fillRect(item.x - 8, item.y - 8, 16, 16);
@@ -175,20 +189,18 @@ function gameLoop() {
     // Срезание кустов и вылет самокруток подальше
     bushes.forEach(bush => {
         if (!bush.isCut) {
-            const closestX = Math.max(bush.x, Math.min(snoop.x, bush.x + tileSize));
-            const closestY = Math.max(bush.y, Math.min(snoop.y, bush.y + tileSize));
+            const closestX = Math.max(bush.x, Math.min(snoop.x, bush.x + tileW));
+            const closestY = Math.max(bush.y, Math.min(snoop.y, bush.y + tileH));
             const d = Math.sqrt((snoop.x - closestX)**2 + (snoop.y - closestY)**2);
             
             if (d < snoop.radius) {
                 bush.isCut = true;
                 if (bush.hasCigarette) {
-                    // Выталкиваем самокрутку по направлению от Снупа на расстояние 45-60 пикселей, чтобы её точно заметили
                     const angle = Math.random() * Math.PI * 2;
-                    const throwDist = 45 + Math.random() * 15;
-                    let spawnX = bush.x + tileSize / 2 + Math.cos(angle) * throwDist;
-                    let spawnY = bush.y + tileSize / 2 + Math.sin(angle) * throwDist;
+                    const throwDist = 50 + Math.random() * 20; // Отлетает подальше
+                    let spawnX = bush.x + tileW / 2 + Math.cos(angle) * throwDist;
+                    let spawnY = bush.y + tileH / 2 + Math.sin(angle) * throwDist;
                     
-                    // Удерживаем выпавшую самокрутку в границах экрана
                     spawnX = Math.max(20, Math.min(window.innerWidth - 20, spawnX));
                     spawnY = Math.max(20, Math.min(window.innerHeight - 20, spawnY));
 
@@ -198,7 +210,7 @@ function gameLoop() {
         }
     });
 
-    // Проверяем безопасность в доме
+    // Проверка нахождения в доме
     const isSnoopInsideHome = (snoop.x >= homePos.x && snoop.x <= homePos.x + homePos.w &&
                                snoop.y >= homePos.y && snoop.y <= homePos.y + homePos.h);
 
@@ -210,7 +222,7 @@ function gameLoop() {
         homeTimer = 0;
     }
 
-    // Рисуем Снупа
+    // Отрисовка Снупа
     if (imgSnoop.complete && imgSnoop.width > 0) {
         ctx.drawImage(imgSnoop, snoop.x - 16, snoop.y - 22, 32, 38);
     } else {
@@ -281,14 +293,12 @@ function gameLoop() {
     ctx.fill();
     ctx.restore();
 
-    // Защита: ловим только если Снуп НЕ в доме!
     if (!isSnoopInsideHome) {
         const vX = snoop.x - cop.x;
-        const vY = snoop.y - cop.y;
-        const dToSnoop = Math.sqrt(vX*vX + vY*vY);
-
-        if (dToSnoop < viewDistance) {
-            let aToSnoop = Math.atan2(vY, vX);
+const vY = snoop.y - cop.y;
+const dToSnoop = Math.sqrt(vXvX + vYvY);
+if (dToSnoop < viewDistance) {
+let aToSnoop = Math.atan2(vY, vX);
 let aDiff = Math.atan2(Math.sin(aToSnoop - cop.angle), Math.cos(aToSnoop - cop.angle));
 if (Math.abs(aDiff) < coneAngle / 2) {
 gameOver = true;
