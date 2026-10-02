@@ -2,14 +2,17 @@ const canvas = document.getElementById('gameCanvas');
 const ctx = canvas.getContext('2d');
 
 let score = 0;
-let currentLevel = 1;
 let gameOver = false;
 
-// Создаем красивый читаемый интерфейс
+// Состояние жажды Снупа
+let hasItemInHand = false; // Несет ли он сейчас самокрутку дома
+let homeState = "none";    // "none", "water" (пьет), "smile" (доволен)
+let homeTimer = 0;         // Таймер для смены картинок в доме
+
 const scoreBoard = document.getElementById('score-board');
 function updateUI() {
     if (scoreBoard) {
-        scoreBoard.innerHTML = `Уровень: ${currentLevel} | Самокрутки: <span id="score">${score}</span>`;
+        scoreBoard.innerHTML = `Самокрутки дома: <span id="score">${score}</span>`;
     }
 }
 updateUI();
@@ -21,108 +24,91 @@ function resizeCanvas() {
 window.addEventListener('resize', resizeCanvas);
 resizeCanvas();
 
-// Загрузка ассетов
+// Загрузка картинок
 const imgSnoop = new Image(); imgSnoop.src = 'snoop.png';
 const imgBush = new Image();   imgBush.src = 'bush.png';
 const imgCop = new Image();    imgCop.src = 'cop.png';
 const imgItem = new Image();   imgItem.src = 'item.png';
+const imgHome = new Image();   imgHome.src = 'home.png';
+const imgWater = new Image();  imgWater.src = 'water.png';
+const imgSmile = new Image();  imgSmile.src = 'smile.png';
 
 const tileSize = 40; 
-let mapTilesX = 6; // Начальный размер поля (6х6 кустов)
-let mapTilesY = 6;
 
-// Перевод координат в Изометрию (центрирование по экрану)
+// Рассчитываем размер карты, чтобы она заполняла весь экран iPhone
+const mapTilesX = Math.ceil(window.innerWidth / 22) + 2;
+const mapTilesY = Math.ceil(window.innerHeight / 11) + 2;
+
+const maxW = mapTilesX * tileSize;
+const maxH = mapTilesY * tileSize;
+
+// Координаты дома (строго в центре карты)
+const homePos = {
+    x: Math.floor(mapTilesX / 2) * tileSize,
+    y: Math.floor(mapTilesY / 2) * tileSize
+};
+
+// Перевод координат в Изометрию
 function toIso(x, y) {
-    const mapWidthPixels = mapTilesX * tileSize;
     return {
         x: (x - y) + canvas.width / 2,
-        y: (x + y) / 2 + (canvas.height / 4)
+        y: (x + y) / 2 + 60
     };
 }
 
 function toScreen(isoX, isoY) {
     let shiftedX = isoX - canvas.width / 2;
-    let shiftedY = isoY - (canvas.height / 4);
+    let shiftedY = isoY - 60;
     return {
         x: (2 * shiftedY + shiftedX) / 2,
         y: (2 * shiftedY - shiftedX) / 2
     };
 }
 
-// Снуп Догг
+// Снуп Догг стартует из дома
 const snoop = {
-    x: 0,
-    y: 0,
+    x: homePos.x + tileSize/2,
+    y: homePos.y + tileSize/2,
     size: 20,
-    targetX: 0,
-    targetY: 0,
+    targetX: homePos.x + tileSize/2,
+    targetY: homePos.y + tileSize/2,
     speed: 3.5
 };
 
+// Генерируем кусты по всей карте (кроме места, где стоит дом)
 let bushes = [];
-let droppedItems = [];
-let cops = [];
-
-// Функция старта уровня
-function startLevel(level) {
-    currentLevel = level;
-    mapTilesX = 5 + level; // С каждым уровнем поле растет
-    mapTilesY = 5 + level;
-    
-    // Снуп всегда стартует в центре карты
-    snoop.x = (mapTilesX * tileSize) / 2;
-    snoop.y = (mapTilesY * tileSize) / 2;
-    snoop.targetX = snoop.x;
-    snoop.targetY = snoop.y;
-    
-    // Генерируем кусты
-    bushes = [];
-    for (let x = 0; x < mapTilesX * tileSize; x += tileSize) {
-        for (let y = 0; y < mapTilesY * tileSize; y += tileSize) {
-            bushes.push({
-                x: x, y: y,
-                isCut: false,
-                hasCigarette: Math.random() < 0.02 // Шанс 2%
-            });
-        }
-    }
-    
-    droppedItems = [];
-    
-    // Генерируем 3 копов в случайных углах карты
-    cops = [];
-    const corners = [
-        {x: 20, y: 20},
-        {x: (mapTilesX*tileSize) - 30, y: 20},
-        {x: 20, y: (mapTilesY*tileSize) - 30},
-        {x: (mapTilesX*tileSize) - 30, y: (mapTilesY*tileSize) - 30}
-    ];
-    
-    for (let i = 0; i < 3; i++) {
-        let startPos = corners[i % corners.length];
-        cops.push({
-            x: startPos.x,
-            y: startPos.y,
-            targetX: Math.random() * (mapTilesX * tileSize),
-            targetY: Math.random() * (mapTilesY * tileSize),
-            speed: 0.8, // Сделали копов медленными (было 1.5 - 2)
-            angle: 0,
-            changeTargetTimer: 0
+for (let x = 0; x < maxW; x += tileSize) {
+    for (let y = 0; y < maxH; y += tileSize) {
+        // Не спавним куст прямо на клетке дома
+        if (x === homePos.x && y === homePos.y) continue;
+        
+        bushes.push({
+            x: x, y: y,
+            isCut: false,
+            // Шанс увеличен в 4 раза: с 2% до 8% (0.08)
+            hasCigarette: Math.random() < 0.08 
         });
     }
-    updateUI();
 }
 
-// Запускаем 1 уровень
-startLevel(1);
+let droppedItems = [];
+
+// Оставляем ВСЕГО 1 КОПА, медленного и спокойного
+let cops = [{
+    x: 40,
+    y: 40,
+    targetX: Math.random() * maxW,
+    targetY: Math.random() * maxH,
+    speed: 0.7,
+    angle: 0,
+    changeTargetTimer: 0
+}];
 
 function handleInput(clientX, clientY) {
     if (gameOver) return;
     const logicPos = toScreen(clientX, clientY);
-    const maxW = mapTilesX * tileSize;
-    const maxH = mapTilesY * tileSize;
-    snoop.targetX = Math.max(0, Math.min(maxW, logicPos.x));
-    snoop.targetY = Math.max(0, Math.min(maxH, logicPos.y));
+    snoop.targetX = Math.max(0, Math.min(maxW - 5, logicPos.x));
+    snoop.targetY = Math.max(0, Math.min(maxH - 5, logicPos.y));
 }
 
 window.addEventListener('click', (e) => handleInput(e.clientX, e.clientY));
@@ -137,33 +123,21 @@ function gameLoop() {
         ctx.fillStyle = "rgba(0, 0, 0, 0.85)";
         ctx.fillRect(0, 0, canvas.width, canvas.height);
         ctx.fillStyle = "#ff3333";
-        ctx.font = "bold 28px sans-serif";
+        ctx.font = "bold 24px sans-serif";
         ctx.textAlign = "center";
         ctx.fillText("ПОЛИЦИЯ ПОЙМАЛА СНУПА!", canvas.width / 2, canvas.height / 2 - 20);
         ctx.fillStyle = "#ffffff";
-        ctx.font = "18px sans-serif";
-        ctx.fillText(`Вы дошли до ${currentLevel} уровня`, canvas.width / 2, canvas.height / 2 + 20);
-        ctx.fillText("Тапните по экрану, чтобы начать заново", canvas.width / 2, canvas.height / 2 + 60);
-        
-        // Перезапуск по клику на экран проигрыша
-        const restart = () => {
-            gameOver = false;
-            score = 0;
-            startLevel(1);
-            window.removeEventListener('click', restart);
-            window.removeEventListener('touchstart', restart);
-        };
-        window.addEventListener('click', restart);
-        window.addEventListener('touchstart', restart);
+        ctx.font = "16px sans-serif";
+        ctx.fillText("Нажмите на экран, чтобы начать заново", canvas.width / 2, canvas.height / 2 + 30);
         return;
     }
 
     ctx.fillStyle = '#1a1a1a';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-    // 1. Рисуем Изометрическую плитку-землю под кустами
-    for (let x = 0; x < mapTilesX * tileSize; x += tileSize) {
-        for (let y = 0; y < mapTilesY * tileSize; y += tileSize) {
+    // 1. Отрисовка земли
+    for (let x = 0; x < maxW; x += tileSize) {
+        for (let y = 0; y < maxH; y += tileSize) {
             const iso = toIso(x, y);
             ctx.beginPath();
             ctx.moveTo(iso.x, iso.y);
@@ -178,12 +152,19 @@ function gameLoop() {
         }
     }
 
-    // 2. Отрисовка кустов
-    let remainingBushes = 0;
+    // 2. Отрисовка дома в центре карты
+    const homeIso = toIso(homePos.x, homePos.y);
+    if (imgHome.complete && imgHome.width > 0) {
+        ctx.drawImage(imgHome, homeIso.x - tileSize, homeIso.y - tileSize * 1.5, tileSize * 2, tileSize * 2.5);
+    } else {
+        ctx.fillStyle = '#ff5722';
+        ctx.fillRect(homeIso.x - 15, homeIso.y - 15, 30, 30);
+    }
+
+    // 3. Отрисовка кустов
     bushes.forEach(bush => {
         const iso = toIso(bush.x, bush.y);
         if (!bush.isCut) {
-            remainingBushes++;
             if (imgBush.complete && imgBush.width > 0) {
                 ctx.drawImage(imgBush, iso.x - tileSize, iso.y - tileSize, tileSize * 2, tileSize * 2);
             } else {
@@ -193,35 +174,27 @@ function gameLoop() {
         }
     });
 
-    // Проверка победы на уровне: если все кусты срезаны
-    if (remainingBushes === 0) {
-        startLevel(currentLevel + 1);
-        return;
-    }
-
-    // 3. Отрисовка выпавших самокруток
+    // 4. Отрисовка выпавших самокруток (крупный размер, лежат на земле)
     for (let i = droppedItems.length - 1; i >= 0; i--) {
         let item = droppedItems[i];
         const iso = toIso(item.x, item.y);
         
         if (imgItem.complete && imgItem.width > 0) {
-            // Крупный размер 35х35 чтобы рассмотреть на экране iPhone
-            ctx.drawImage(imgItem, iso.x - 17, iso.y - 17, 35, 35);
+            ctx.drawImage(imgItem, iso.x - 20, iso.y - 20, 40, 40); // Сделали крупными!
         } else {
             ctx.fillStyle = '#FFD700';
-            ctx.fillRect(iso.x - 6, iso.y - 6, 12, 12);
+            ctx.fillRect(iso.x - 8, iso.y - 8, 16, 16);
         }
 
-        // Логика подбора предмета Снупом
+        // Подбор самокрутки Снупом (только если руки свободны)
         const dist = Math.sqrt((snoop.x - item.x)**2 + (snoop.y - item.y)**2);
-        if (dist < snoop.size + 10) {
-            score += 1;
-            updateUI();
+        if (dist < snoop.size + 15 && !hasItemInHand) {
+            hasItemInHand = true; // Снуп взял самокрутку и теперь хочет пить
             droppedItems.splice(i, 1);
         }
     }
 
-    // 4. Движение Снупа
+    // 5. Движение Снупа
     const dx = snoop.targetX - snoop.x;
     const dy = snoop.targetY - snoop.y;
     const dist = Math.sqrt(dx*dx + dy*dy);
@@ -237,15 +210,27 @@ function gameLoop() {
             if (d < snoop.size) {
                 bush.isCut = true;
                 if (bush.hasCigarette) {
-                    // Выталкиваем предмет чуть в сторону, чтобы игрок его заметил
+                    // Выталкиваем самокрутку подальше, чтобы её точно заметили
                     droppedItems.push({ 
-                        x: bush.x + tileSize/2 + (Math.random() * 20 - 10), 
-                        y: bush.y + tileSize/2 + (Math.random() * 20 - 10)
+                        x: bush.x + (Math.random() * 40 - 20), 
+                        y: bush.y + (Math.random() * 40 - 20)
                     });
                 }
             }
         }
     });
+
+    // Логика возвращения Домой (Снуп пришел пить)
+    const distToHome = Math.sqrt((snoop.x - (homePos.x + tileSize/2))**2 + (snoop.y - (homePos.y + tileSize/2))**2);
+    if (distToHome < snoop.size + 10 && hasItemInHand) {
+        hasItemInHand = false; // Отдал самокрутку дома
+        score += 1;
+        updateUI();
+        
+        // Запуск анимации сушняка
+        homeState = "water";
+        homeTimer = 0;
+    }
 
     // Отрисовка Снупа
     const snoopIso = toIso(snoop.x, snoop.y);
@@ -256,14 +241,54 @@ function gameLoop() {
         ctx.fillStyle = '#7B1FA2'; ctx.fill(); ctx.closePath();
     }
 
-    // 5. Логика копов (Хаотичное блуждание)
+    // 6. Отрисовка иконок над домом (Вода -> Смайлик)
+    if (homeState !== "none") {
+        homeTimer++;
+        const bubbleIso = toIso(homePos.x + tileSize/2, homePos.y + tileSize/2);
+        const bubbleY = bubbleIso.y - tileSize * 1.8;
+
+        // Рисуем белый кружочек-облачко
+        ctx.beginPath();
+        ctx.arc(bubbleIso.x, bubbleY, 22, 0, Math.PI * 2);
+        ctx.fillStyle = "#ffffff";
+        ctx.fill();
+        ctx.lineWidth = 2;
+        ctx.strokeStyle = "#1a1a1a";
+        ctx.stroke();
+        ctx.closePath();
+
+        if (homeState === "water") {
+            if (imgWater.complete && imgWater.width > 0) {
+                ctx.drawImage(imgWater, bubbleIso.x - 12, bubbleY - 12, 24, 24);
+            }
+            if (homeTimer > 120) { // Через 2 секунды (120 кадров) переключаем на смайлик
+                homeState = "smile";
+                homeTimer = 0;
+            }
+        } else if (homeState === "smile") {
+            if (imgSmile.complete && imgSmile.width > 0) {
+                ctx.drawImage(imgSmile, bubbleIso.x - 12, bubbleY - 12, 24, 24);
+            }
+            if (homeTimer > 120) { // Еще через 2 секунды прячем иконку
+                homeState = "none";
+            }
+        }
+    }
+
+    // 7. Красная надпись тревоги СРОЧНО ДОМОЙ
+    if (hasItemInHand) {
+        ctx.fillStyle = "#ff3333";
+        ctx.font = "bold 20px sans-serif";
+        ctx.textAlign = "center";
+        ctx.fillText("СРОЧНО ВЕРНИТЕСЬ ДОМОЙ! НУЖНО ПОПИТЬ!", canvas.width / 2, 80);
+    }
+
+    // 8. Логика единственного Копа
     cops.forEach(cop => {
         cop.changeTargetTimer++;
-        
-        // Каждые 4 секунды (240 кадров) коп выбирает случайную новую цель на карте
-        if (cop.changeTargetTimer > 240) {
-            cop.targetX = Math.random() * (mapTilesX * tileSize);
-            cop.targetY = Math.random() * (mapTilesY * tileSize);
+        if (cop.changeTargetTimer > 300) {
+            cop.targetX = Math.random() * maxW;
+            cop.targetY = Math.random() * maxH;
             cop.changeTargetTimer = 0;
         }
 
@@ -275,43 +300,34 @@ function gameLoop() {
             cop.x += (cDx / cDist) * cop.speed;
             cop.y += (cDy / cDist) * cop.speed;
             cop.angle = Math.atan2(cDy, cDx);
-        }
-
-        const copIso = toIso(cop.x, cop.y);
-
-        // Отрисовка фонарика копа
-        const viewDistance = 90; // Чуть уменьшили дальность луча фонарика
-        const coneAngle = Math.PI / 4; 
-
-        ctx.save();
-        ctx.translate(copIso.x, copIso.y);
-        ctx.scale(1, 0.5); 
-        ctx.rotate(cop.angle);
-
-        ctx.beginPath();
-        ctx.moveTo(0, 0);
-        ctx.arc(0, 0, viewDistance, -coneAngle/2, coneAngle/2);
-        ctx.closePath();
-        ctx.fillStyle = "rgba(255, 255, 100, 0.25)";
-        ctx.fill();
-        ctx.restore();
-
-        // Проверка поимки
-        const vX = snoop.x - cop.x;
-        const vY = snoop.y - cop.y;
-        const dToSnoop = Math.sqrt(vX*vX + vY*vY);
-
-        if (dToSnoop < viewDistance) {
-            let aToSnoop = Math.atan2(vY, vX);
-            let aDiff = Math.atan2(Math.sin(aToSnoop - cop.angle), Math.cos(aToSnoop - cop.angle));
-            if (Math.abs(aDiff) < coneAngle / 2) {
-                gameOver = true;
-            }
-        }
-        
-        // Рисуем копа
+}
+const copIso = toIso(cop.x, cop.y);
+const viewDistance = 80;
+const coneAngle = Math.PI / 4;
+ctx.save();
+ctx.translate(copIso.x, copIso.y);
+ctx.scale(1, 0.5);
+ctx.rotate(cop.angle);
+ctx.beginPath();
+ctx.moveTo(0, 0);
+ctx.arc(0, 0, viewDistance, -coneAngle/2, coneAngle/2);
+ctx.closePath();
+ctx.fillStyle = "rgba(255, 255, 100, 0.22)";
+ctx.fill();
+ctx.restore();
+// Проверка поимки
+const vX = snoop.x - cop.x;
+const vY = snoop.y - cop.y;
+const dToSnoop = Math.sqrt(vXvX + vYvY);
+if (dToSnoop < viewDistance) {
+let aToSnoop = Math.atan2(vY, vX);
+let aDiff = Math.atan2(Math.sin(aToSnoop - cop.angle), Math.cos(aToSnoop - cop.angle));
+if (Math.abs(aDiff) < coneAngle / 2) {
+gameOver = true;
+}
+}
 if (imgCop.complete && imgCop.width > 0) {
-ctx.drawImage(imgCop, copIso.x - 20, copIso.y - 35, 40, 45);
+ctx.drawImage(imgCop, copIso.x - 18, copIso.y - 32, 36, 40);
 } else {
 ctx.beginPath(); ctx.arc(copIso.x, copIso.y, 10, 0, Math.PI*2);
 ctx.fillStyle = '#0d47a1'; ctx.fill(); ctx.closePath();
@@ -319,5 +335,6 @@ ctx.fillStyle = '#0d47a1'; ctx.fill(); ctx.closePath();
 });
 requestAnimationFrame(gameLoop);
 }
+window.addEventListener('click', () => { if (gameOver) { gameOver = false; score = 0; hasItemInHand = false; homeState = "none"; snoop.x = homePos.x + tileSize/2; snoop.y = homePos.y + tileSize/2; snoop.targetX = snoop.x; snoop.targetY = snoop.y; } });
+window.addEventListener('touchstart', () => { if (gameOver) { gameOver = false; score = 0; hasItemInHand = false; homeState = "none"; snoop.x = homePos.x + tileSize/2; snoop.y = homePos.y + tileSize/2; snoop.targetX = snoop.x; snoop.targetY = snoop.y; } });
 gameLoop();
-
