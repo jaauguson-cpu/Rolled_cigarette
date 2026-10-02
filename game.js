@@ -198,18 +198,15 @@ function gameLoop() {
         ctx.fillRect(homeIso.x - 20, homeIso.y - 20, 40, 40);
     }
 
-    // 3. Отрисовка кустов
-    let remainingBushes = 0;
+   // 3. Отрисовка изометрических кустов
     bushes.forEach(bush => {
         const iso = toIso(bush.x, bush.y);
         if (!bush.isCut) {
-            remainingBushes++;
             if (imgBush.complete && imgBush.width > 0) {
-                const bSize = tileSize * 1.55;
-                ctx.drawImage(imgBush, iso.x - bSize, iso.y - bSize, bSize * 2, bSize * 2);
+                ctx.drawImage(imgBush, iso.x - tileSize, iso.y - tileSize, tileSize * 2, tileSize * 2);
             } else {
                 ctx.fillStyle = '#2E7D32';
-                ctx.fillRect(iso.x - 12, iso.y - 12, 24, 24);
+                ctx.fillRect(iso.x - 10, iso.y - 10, 20, 20);
             }
         }
     });
