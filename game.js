@@ -308,4 +308,16 @@ function gameLoop() {
                 gameOver = true;
             }
         }
+        
+        // Рисуем копа
+if (imgCop.complete && imgCop.width > 0) {
+ctx.drawImage(imgCop, copIso.x - 20, copIso.y - 35, 40, 45);
+} else {
+ctx.beginPath(); ctx.arc(copIso.x, copIso.y, 10, 0, Math.PI*2);
+ctx.fillStyle = '#0d47a1'; ctx.fill(); ctx.closePath();
+}
+});
+requestAnimationFrame(gameLoop);
+}
+gameLoop();
 
