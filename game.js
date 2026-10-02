@@ -1,15 +1,18 @@
 const canvas = document.getElementById('gameCanvas');
 const ctx = canvas.getContext('2d');
-const scoreElement = document.getElementById('score');
-
-const scoreBoard = document.getElementById('score-board');
-if (scoreBoard) {
-    scoreBoard.innerHTML = 'Самокрутки: <span id="score">0</span>';
-}
-const updatedScoreElement = document.getElementById('score');
 
 let score = 0;
+let currentLevel = 1;
 let gameOver = false;
+
+// Создаем красивый читаемый интерфейс
+const scoreBoard = document.getElementById('score-board');
+function updateUI() {
+    if (scoreBoard) {
+        scoreBoard.innerHTML = `Уровень: ${currentLevel} | Самокрутки: <span id="score">${score}</span>`;
+    }
+}
+updateUI();
 
 function resizeCanvas() {
     canvas.width = window.innerWidth;
@@ -18,69 +21,108 @@ function resizeCanvas() {
 window.addEventListener('resize', resizeCanvas);
 resizeCanvas();
 
-// Загрузка изометрических ассетов
+// Загрузка ассетов
 const imgSnoop = new Image(); imgSnoop.src = 'snoop.png';
 const imgBush = new Image();   imgBush.src = 'bush.png';
 const imgCop = new Image();    imgCop.src = 'cop.png';
 const imgItem = new Image();   imgItem.src = 'item.png';
 
-const tileSize = 50; // Размер плитки в изометрии
+const tileSize = 40; 
+let mapTilesX = 6; // Начальный размер поля (6х6 кустов)
+let mapTilesY = 6;
 
-// Функции перевода координат в Изометрию
+// Перевод координат в Изометрию (центрирование по экрану)
 function toIso(x, y) {
+    const mapWidthPixels = mapTilesX * tileSize;
     return {
         x: (x - y) + canvas.width / 2,
-        y: (x + y) / 2 + 100
+        y: (x + y) / 2 + (canvas.height / 4)
     };
 }
+
 function toScreen(isoX, isoY) {
     let shiftedX = isoX - canvas.width / 2;
-    let shiftedY = isoY - 100;
+    let shiftedY = isoY - (canvas.height / 4);
     return {
         x: (2 * shiftedY + shiftedX) / 2,
         y: (2 * shiftedY - shiftedX) / 2
     };
 }
 
-// Персонаж Снуп Догг (координаты в 2D пространстве логики)
+// Снуп Догг
 const snoop = {
-    x: 100,
-    y: 100,
-    size: 30,
-    targetX: 100,
-    targetY: 100,
-    speed: 4
+    x: 0,
+    y: 0,
+    size: 20,
+    targetX: 0,
+    targetY: 0,
+    speed: 3.5
 };
 
-// Сетка кустов
 let bushes = [];
-const worldSize = 400; // Размеры карты в пикселях
-for (let x = 0; x < worldSize; x += tileSize) {
-    for (let y = 0; y < worldSize; y += tileSize) {
-        bushes.push({
-            x: x, y: y,
-            isCut: false,
-            // Шанс уменьшен в 10 раз: с 20% до 2% (0.02)
-            hasCigarette: Math.random() < 0.02 
+let droppedItems = [];
+let cops = [];
+
+// Функция старта уровня
+function startLevel(level) {
+    currentLevel = level;
+    mapTilesX = 5 + level; // С каждым уровнем поле растет
+    mapTilesY = 5 + level;
+    
+    // Снуп всегда стартует в центре карты
+    snoop.x = (mapTilesX * tileSize) / 2;
+    snoop.y = (mapTilesY * tileSize) / 2;
+    snoop.targetX = snoop.x;
+    snoop.targetY = snoop.y;
+    
+    // Генерируем кусты
+    bushes = [];
+    for (let x = 0; x < mapTilesX * tileSize; x += tileSize) {
+        for (let y = 0; y < mapTilesY * tileSize; y += tileSize) {
+            bushes.push({
+                x: x, y: y,
+                isCut: false,
+                hasCigarette: Math.random() < 0.02 // Шанс 2%
+            });
+        }
+    }
+    
+    droppedItems = [];
+    
+    // Генерируем 3 копов в случайных углах карты
+    cops = [];
+    const corners = [
+        {x: 20, y: 20},
+        {x: (mapTilesX*tileSize) - 30, y: 20},
+        {x: 20, y: (mapTilesY*tileSize) - 30},
+        {x: (mapTilesX*tileSize) - 30, y: (mapTilesY*tileSize) - 30}
+    ];
+    
+    for (let i = 0; i < 3; i++) {
+        let startPos = corners[i % corners.length];
+        cops.push({
+            x: startPos.x,
+            y: startPos.y,
+            targetX: Math.random() * (mapTilesX * tileSize),
+            targetY: Math.random() * (mapTilesY * tileSize),
+            speed: 0.8, // Сделали копов медленными (было 1.5 - 2)
+            angle: 0,
+            changeTargetTimer: 0
         });
     }
+    updateUI();
 }
 
-// Массив выпавших на землю самокруток
-let droppedItems = [];
-
-// Враги: 3 полицейских
-let cops = [
-    { x: 50, y: 300, targetX: 350, targetY: 300, speed: 1.5, angle: 0, direction: 1 },
-    { x: 300, y: 50, targetX: 300, targetY: 350, speed: 1.2, angle: Math.PI/2, direction: 1 },
-    { x: 200, y: 200, targetX: 200, targetY: 50, speed: 2, angle: -Math.PI/2, direction: -1 }
-];
+// Запускаем 1 уровень
+startLevel(1);
 
 function handleInput(clientX, clientY) {
     if (gameOver) return;
     const logicPos = toScreen(clientX, clientY);
-    snoop.targetX = Math.max(0, Math.min(worldSize - 10, logicPos.x));
-    snoop.targetY = Math.max(0, Math.min(worldSize - 10, logicPos.y));
+    const maxW = mapTilesX * tileSize;
+    const maxH = mapTilesY * tileSize;
+    snoop.targetX = Math.max(0, Math.min(maxW, logicPos.x));
+    snoop.targetY = Math.max(0, Math.min(maxH, logicPos.y));
 }
 
 window.addEventListener('click', (e) => handleInput(e.clientX, e.clientY));
@@ -92,56 +134,94 @@ window.addEventListener('touchstart', (e) => {
 
 function gameLoop() {
     if (gameOver) {
-        ctx.fillStyle = "rgba(0, 0, 0, 0.7)";
+        ctx.fillStyle = "rgba(0, 0, 0, 0.85)";
         ctx.fillRect(0, 0, canvas.width, canvas.height);
         ctx.fillStyle = "#ff3333";
-        ctx.font = "bold 32px sans-serif";
+        ctx.font = "bold 28px sans-serif";
         ctx.textAlign = "center";
-        ctx.fillText("ПОЛИЦИЯ ПОЙМАЛА СНУПА!", canvas.width / 2, canvas.height / 2);
+        ctx.fillText("ПОЛИЦИЯ ПОЙМАЛА СНУПА!", canvas.width / 2, canvas.height / 2 - 20);
         ctx.fillStyle = "#ffffff";
         ctx.font = "18px sans-serif";
-        ctx.fillText("Обновите страницу, чтобы начать заново", canvas.width / 2, canvas.height / 2 + 40);
+        ctx.fillText(`Вы дошли до ${currentLevel} уровня`, canvas.width / 2, canvas.height / 2 + 20);
+        ctx.fillText("Тапните по экрану, чтобы начать заново", canvas.width / 2, canvas.height / 2 + 60);
+        
+        // Перезапуск по клику на экран проигрыша
+        const restart = () => {
+            gameOver = false;
+            score = 0;
+            startLevel(1);
+            window.removeEventListener('click', restart);
+            window.removeEventListener('touchstart', restart);
+        };
+        window.addEventListener('click', restart);
+        window.addEventListener('touchstart', restart);
         return;
     }
 
-    ctx.fillStyle = '#222';
+    ctx.fillStyle = '#1a1a1a';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-    // 1. Отрисовка изометрической земли и кустов
+    // 1. Рисуем Изометрическую плитку-землю под кустами
+    for (let x = 0; x < mapTilesX * tileSize; x += tileSize) {
+        for (let y = 0; y < mapTilesY * tileSize; y += tileSize) {
+            const iso = toIso(x, y);
+            ctx.beginPath();
+            ctx.moveTo(iso.x, iso.y);
+            ctx.lineTo(iso.x + tileSize, iso.y + tileSize/2);
+            ctx.lineTo(iso.x, iso.y + tileSize);
+            ctx.lineTo(iso.x - tileSize, iso.y + tileSize/2);
+            ctx.closePath();
+            ctx.fillStyle = '#252e22';
+            ctx.fill();
+            ctx.strokeStyle = '#1f261c';
+            ctx.stroke();
+        }
+    }
+
+    // 2. Отрисовка кустов
+    let remainingBushes = 0;
     bushes.forEach(bush => {
         const iso = toIso(bush.x, bush.y);
         if (!bush.isCut) {
+            remainingBushes++;
             if (imgBush.complete && imgBush.width > 0) {
                 ctx.drawImage(imgBush, iso.x - tileSize, iso.y - tileSize, tileSize * 2, tileSize * 2);
             } else {
                 ctx.fillStyle = '#2E7D32';
-                ctx.fillRect(iso.x - 15, iso.y - 15, 30, 30);
+                ctx.fillRect(iso.x - 10, iso.y - 10, 20, 20);
             }
         }
     });
 
-    // 2. Отрисовка выпавших самокруток
+    // Проверка победы на уровне: если все кусты срезаны
+    if (remainingBushes === 0) {
+        startLevel(currentLevel + 1);
+        return;
+    }
+
+    // 3. Отрисовка выпавших самокруток
     for (let i = droppedItems.length - 1; i >= 0; i--) {
         let item = droppedItems[i];
         const iso = toIso(item.x, item.y);
         
         if (imgItem.complete && imgItem.width > 0) {
-            ctx.drawImage(imgItem, iso.x - 15, iso.y - 15, 30, 30);
+            // Крупный размер 35х35 чтобы рассмотреть на экране iPhone
+            ctx.drawImage(imgItem, iso.x - 17, iso.y - 17, 35, 35);
         } else {
             ctx.fillStyle = '#FFD700';
-            ctx.fillRect(iso.x - 5, iso.y - 5, 10, 10);
+            ctx.fillRect(iso.x - 6, iso.y - 6, 12, 12);
         }
 
         // Логика подбора предмета Снупом
         const dist = Math.sqrt((snoop.x - item.x)**2 + (snoop.y - item.y)**2);
-        if (dist < snoop.size) {
+        if (dist < snoop.size + 10) {
             score += 1;
-            if (updatedScoreElement) updatedScoreElement.innerText = score;
+            updateUI();
             droppedItems.splice(i, 1);
         }
     }
 
-    // 3. Движение Снупа
+    // 4. Движение Снупа
     const dx = snoop.targetX - snoop.x;
     const dy = snoop.targetY - snoop.y;
     const dist = Math.sqrt(dx*dx + dy*dy);
@@ -157,87 +237,75 @@ function gameLoop() {
             if (d < snoop.size) {
                 bush.isCut = true;
                 if (bush.hasCigarette) {
-                    droppedItems.push({ x: bush.x + tileSize/2, y: bush.y + tileSize/2 });
+                    // Выталкиваем предмет чуть в сторону, чтобы игрок его заметил
+                    droppedItems.push({ 
+                        x: bush.x + tileSize/2 + (Math.random() * 20 - 10), 
+                        y: bush.y + tileSize/2 + (Math.random() * 20 - 10)
+                    });
                 }
             }
         }
     });
 
-    // Отрисовка Снупа в изометрии
+    // Отрисовка Снупа
     const snoopIso = toIso(snoop.x, snoop.y);
     if (imgSnoop.complete && imgSnoop.width > 0) {
-        ctx.drawImage(imgSnoop, snoopIso.x - 20, snoopIso.y - 40, 40, 50);
+        ctx.drawImage(imgSnoop, snoopIso.x - 20, snoopIso.y - 35, 40, 45);
     } else {
-        ctx.beginPath(); ctx.arc(snoopIso.x, snoopIso.y, 15, 0, Math.PI*2);
+        ctx.beginPath(); ctx.arc(snoopIso.x, snoopIso.y, 12, 0, Math.PI*2);
         ctx.fillStyle = '#7B1FA2'; ctx.fill(); ctx.closePath();
     }
 
-    // 4. Логика и отрисовка копов с фонариками
+    // 5. Логика копов (Хаотичное блуждание)
     cops.forEach(cop => {
-        // Патрулирование туда-сюда
-        if (cop.direction === 1) {
-            const dX = cop.targetX - cop.x; const dY = cop.targetY - cop.y;
-            const distance = Math.sqrt(dX*dX + dY*dY);
-            if (distance > cop.speed) {
-                cop.x += (dX / distance) * cop.speed; cop.y += (dY / distance) * cop.speed;
-                cop.angle = Math.atan2(dY, dX);
-            } else { cop.direction = -1; }
-        } else {
-            const startX = (cop === cops[0]) ? 50 : (cop === cops[1] ? 300 : 200);
-            const startY = (cop === cops[0]) ? 300 : (cop === cops[1] ? 50 : 200);
-            const dX = startX - cop.x; const dY = startY - cop.y;
-            const distance = Math.sqrt(dX*dX + dY*dY);
-            if (distance > cop.speed) {
-                cop.x += (dX / distance) * cop.speed; cop.y += (dY / distance) * cop.speed;
-                cop.angle = Math.atan2(dY, dX);
-            } else { cop.direction = 1; }
+        cop.changeTargetTimer++;
+        
+        // Каждые 4 секунды (240 кадров) коп выбирает случайную новую цель на карте
+        if (cop.changeTargetTimer > 240) {
+            cop.targetX = Math.random() * (mapTilesX * tileSize);
+            cop.targetY = Math.random() * (mapTilesY * tileSize);
+            cop.changeTargetTimer = 0;
+        }
+
+        const cDx = cop.targetX - cop.x;
+        const cDy = cop.targetY - cop.y;
+        const cDist = Math.sqrt(cDx*cDx + cDy*cDy);
+
+        if (cDist > cop.speed) {
+            cop.x += (cDx / cDist) * cop.speed;
+            cop.y += (cDy / cDist) * cop.speed;
+            cop.angle = Math.atan2(cDy, cDx);
         }
 
         const copIso = toIso(cop.x, cop.y);
 
-        // Расчет и отрисовка конуса света фонарика
-        const viewDistance = 120; 
+        // Отрисовка фонарика копа
+        const viewDistance = 90; // Чуть уменьшили дальность луча фонарика
         const coneAngle = Math.PI / 4; 
 
         ctx.save();
         ctx.translate(copIso.x, copIso.y);
-        // В изометрии углы сжимаются по вертикали в 2 раза
         ctx.scale(1, 0.5); 
         ctx.rotate(cop.angle);
 
-        // Рисуем полупрозрачный луч фонаря
         ctx.beginPath();
         ctx.moveTo(0, 0);
         ctx.arc(0, 0, viewDistance, -coneAngle/2, coneAngle/2);
         ctx.closePath();
-        ctx.fillStyle = "rgba(255, 255, 0, 0.25)";
+        ctx.fillStyle = "rgba(255, 255, 100, 0.25)";
         ctx.fill();
         ctx.restore();
 
-        // Проверка: попал ли Снуп в луч фонаря копа?
-        const vectorX = snoop.x - cop.x;
-        const vectorY = snoop.y - cop.y;
-        const distanceToSnoop = Math.sqrt(vectorX*vectorX + vectorY*vectorY);
+        // Проверка поимки
+        const vX = snoop.x - cop.x;
+        const vY = snoop.y - cop.y;
+        const dToSnoop = Math.sqrt(vX*vX + vY*vY);
 
-        if (distanceToSnoop < viewDistance) {
-            let angleToSnoop = Math.atan2(vectorY, vectorX);
-            let angleDiff = Math.atan2(Math.sin(angleToSnoop - cop.angle), Math.cos(angleToSnoop - cop.angle));
-            
-            if (Math.abs(angleDiff) < coneAngle / 2) {
-                gameOver = true; // Поймали!
+        if (dToSnoop < viewDistance) {
+            let aToSnoop = Math.atan2(vY, vX);
+            let aDiff = Math.atan2(Math.sin(aToSnoop - cop.angle), Math.cos(aToSnoop - cop.angle));
+            if (Math.abs(aDiff) < coneAngle / 2) {
+                gameOver = true;
             }
         }
 
-        // Рисуем самого копа
-        if (imgCop.complete && imgCop.width > 0) {
-            ctx.drawImage(imgCop, copIso.x - 20, copIso.y - 35, 40, 45);
-        } else {
-            ctx.beginPath(); ctx.arc(copIso.x, copIso.y, 12, 0, Math.PI*2);
-            ctx.fillStyle = '#0d47a1'; ctx.fill(); ctx.closePath();
-        }
-    });
-
-    requestAnimationFrame(gameLoop);
-}
-
-gameLoop();
