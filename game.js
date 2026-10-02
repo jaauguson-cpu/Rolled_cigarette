@@ -19,10 +19,10 @@ window.addEventListener('resize', resizeCanvas);
 resizeCanvas();
 
 // Загрузка изометрических ассетов
-const imgSnoop = new Image(); imgSnoop.src = 'snoop.png';
-const imgBush = new Image();   imgBush.src = 'bush.png';
-const imgCop = new Image();    imgCop.src = 'cop.png';
-const imgItem = new Image();   imgItem.src = 'item.png';
+const imgSnoop = new Image(); imgSnoop.src = 'snoop.jpg';
+const imgBush = new Image();   imgBush.src = 'bush.jpg';
+const imgCop = new Image();    imgCop.src = 'cop.jpg';
+const imgItem = new Image();   imgItem.src = 'item.jpg';
 
 const tileSize = 50; // Размер плитки в изометрии
 
